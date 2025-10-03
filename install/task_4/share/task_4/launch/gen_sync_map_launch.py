@@ -7,7 +7,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 def generate_launch_description():
     # Namespace argument (default is /robot for your class robot)
-    #namespace = LaunchConfiguration('namespace', default='/robot')
+    namespace = LaunchConfiguration('namespace', default='/robot')
 
     # Include the SLAM launch file from turtlebot4_navigation
     slam_launch = IncludeLaunchDescription(
