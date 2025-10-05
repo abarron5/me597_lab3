@@ -28,6 +28,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'auto_navigator.py = task_4.auto_navigator.py:main',
         ],
     },
 )
