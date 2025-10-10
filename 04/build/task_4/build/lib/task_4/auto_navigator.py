@@ -1224,27 +1224,28 @@ class Navigation(Node):
         # TODO: IMPLEMENT A MECHANISM TO DECIDE WHICH POINT IN THE PATH TO FOLLOW idx <= len(path)
         return idx
     
-    def get_path_idx(self, path, vehicle_pose):
-        """Return the index of the next waypoint to follow."""
+    def get_path_idx(self, path, vehicle_pose, last_idx=0):
+        """Return the index of the next waypoint to follow, never going backward."""
         if not path.poses:
             return 0
 
-        threshold = 0.1  # meters, distance to consider "reached"
+        threshold = 0.1  # meters
         vx = vehicle_pose.pose.position.x
         vy = vehicle_pose.pose.position.y
 
-        for i, pose_stamped in enumerate(path.poses):
-            px = pose_stamped.pose.position.x
-            py = pose_stamped.pose.position.y
+        # Start checking from last_idx to avoid going backward
+        for i in range(last_idx, len(path.poses)):
+            px = path.poses[i].pose.position.x
+            py = path.poses[i].pose.position.y
             dist = ((px - vx) ** 2 + (py - vy) ** 2) ** 0.5
             if dist > threshold:
                 return i
 
-        # If all waypoints are very close, return the last one
         return len(path.poses) - 1
 
 
-    def path_follower(self, vehicle_pose, current_goal_pose):
+
+    def path_follower_default(self, vehicle_pose, current_goal_pose):
         """! Path follower.
         @param  vehicle_pose           PoseStamped object containing the current vehicle pose.
         @param  current_goal_pose      PoseStamped object containing the current target from the created path. This is different from the global target.
@@ -1253,6 +1254,34 @@ class Navigation(Node):
         speed = 0.0
         heading = 0.0
         # TODO: IMPLEMENT PATH FOLLOWER
+        return speed, heading
+    
+    def path_follower(self, vehicle_pose, current_goal_pose):
+        """Compute speed and heading to reach the current goal waypoint."""
+        # Current position
+        vx = vehicle_pose.pose.position.x
+        vy = vehicle_pose.pose.position.y
+
+        # Goal position
+        gx = current_goal_pose.pose.position.x
+        gy = current_goal_pose.pose.position.y
+
+        # Heading error
+        desired_yaw = math.atan2(gy - vy, gx - vx)
+
+        # Robot current orientation (yaw)
+        q = vehicle_pose.pose.orientation
+        yaw = math.atan2(2*(q.w*q.z + q.x*q.y), 1 - 2*(q.y**2 + q.z**2))
+
+        # Simple proportional control for heading
+        heading_error = desired_yaw - yaw
+        # Normalize between -pi and pi
+        heading_error = (heading_error + math.pi) % (2 * math.pi) - math.pi
+
+        # Set speed and heading
+        speed = 0.1  # m/s, slow forward speed
+        heading = 2.0 * heading_error  # proportional gain Kp=2.0
+
         return speed, heading
 
     def move_ttbot(self, speed, heading):
@@ -1267,6 +1296,15 @@ class Navigation(Node):
         cmd_vel.angular.z = heading
 
         self.cmd_vel_pub.publish(cmd_vel)
+
+    def move_ttbot_safe(self, speed, heading):
+        """Move the TurtleBot using linear speed and angular velocity."""
+        cmd_vel = Twist()
+        # Limit speed to reasonable ranges
+        cmd_vel.linear.x = max(min(speed, 0.2), 0.0)  # max 0.2 m/s
+        cmd_vel.angular.z = max(min(heading, 1.0), -1.0)  # max ±1 rad/s
+        self.cmd_vel_pub.publish(cmd_vel)
+
     """
     def run(self):
         #Main loop.
@@ -1295,7 +1333,7 @@ class Navigation(Node):
 
             self.rate.sleep()
     """
-    
+    """
     def run(self):
         #Main loop of the node, now non-blocking for callbacks.
         self.get_logger().info("Navigation node started, waiting for AMCL and goal updates...")
@@ -1339,48 +1377,57 @@ class Navigation(Node):
 
             # Sleep a bit to avoid busy looping
             self.rate.sleep()
-    
     """
+    
     def run(self):
-        #Main loop: plan path and move the TurtleBot towards the goal only when a new goal is received.
-        self.new_goal_received = False  # Initialize the flag
+        """Main loop using get_path_idx() to follow waypoints intelligently."""
+        self.get_logger().info("Navigation node started, waiting for AMCL and goal updates...")
+
+        self.new_goal_received = False  # Flag for new goal
+        self.ttbot_pose_received = False  # Flag for first AMCL pose
 
         while rclpy.ok():
-            # Process callbacks
-            rclpy.spin_once(self, timeout_sec=0.1)
+            # 1️⃣ Process callbacks
+            rclpy.spin_once(self, timeout_sec=0.05)
 
-            # Check if a new goal was received
-            if self.new_goal_received:
-                if not hasattr(self, 'goal_pose') or self.goal_pose is None:
-                    continue  # No goal yet, skip
+            # 2️⃣ Wait for a new goal
+            if not self.new_goal_received:
+                continue
 
-                # Plan path from current robot pose to goal
-                self.path = self.a_star_path_planner(self.ttbot_pose, self.goal_pose)
-                if not self.path.poses:
-                    self.get_logger().warn("No path generated for the new goal")
-                    self.new_goal_received = False
-                    self.rate.sleep()
-                    continue
+            # 3️⃣ Plan path once
+            path = self.a_star_path_planner(self.ttbot_pose, self.goal_pose)
+            self.mp.draw_path(path)
+            self.get_logger().info(f"Planned path with {len(path.poses)} waypoints")
+            self.new_goal_received = False  # Reset goal flag
 
-                # Reset the goal flag after planning
-                self.new_goal_received = False
+            # 4️⃣ Follow path using get_path_idx
+            last_idx = 0
 
-            # If a path exists, follow it
-            if self.path and self.path.poses:
-                idx = self.get_path_idx(self.path, self.ttbot_pose)
-                current_goal = self.path.poses[idx]
+            while True:
+                rclpy.spin_once(self, timeout_sec=0.05)
 
-                # Compute control commands
+                idx = self.get_path_idx(path, self.ttbot_pose, last_idx)
+                current_goal = path.poses[idx]
+
+                print("Pose:", idx, "/", len(path.poses), 
+                    "Current Goal: (", current_goal.pose.position.x, ",", current_goal.pose.position.y, ")")
+
                 speed, heading = self.path_follower(self.ttbot_pose, current_goal)
-
-                # Move the robot
                 self.move_ttbot(speed, heading)
 
-                # Publish the path for visualization
-                self.path_pub.publish(self.path)
+                last_idx = idx  # update
+
+                if idx >= len(path.poses) - 1:
+                    self.get_logger().info("Reached goal!")
+                    break
+
+                if self.new_goal_received:
+                    self.get_logger().info("New goal received! Replanning path...")
+                    break
+
 
             self.rate.sleep()
-    """
+
 
 
 
