@@ -229,7 +229,7 @@ class AStar():
         # initialize queue
         for __, node in in_tree.g.items():
             self.q.push(node)
-
+        
     """
     def __init__(self,in_tree):
         self.in_tree = in_tree
@@ -265,12 +265,14 @@ class AStar():
         return self.dist[node.name] + self.h[node.name]
 
 
-
+    """
     def solve(self, sn, en):
         # pass
         # Place code here (remove the pass
         # statement once you start coding)
         self.dist[sn.name] = 0
+        start_time = time.time()
+        print("Planning path...", end="", flush=True)
         while len(self.q) > 0:
             # sort by f-score instead of distance
             self.q.sort(key=self.__get_f_score)
@@ -280,11 +282,64 @@ class AStar():
             for i in range(len(u.children)):
                 c = u.children[i]
                 w = u.weight[i]
+
+                elapsed = time.time() - start_time
+                print(f"\rPlanning path... {elapsed:.2f} s", end="", flush=True)
+                time.sleep(0.5)
+
+                new_dist = self.dist[u.name] + w
+                if new_dist < self.dist[c.name]:
+                    self.dist[c.name] = new_dist
+                    self.via[c.name] = u.name
+        print("\nPath planning complete!")
+    """
+    def solve(self, sn, en):
+        self.dist[sn.name] = 0
+        start_time = time.time()
+        last_print_time = start_time
+        print("Planning path...", end="", flush=True)
+
+        while len(self.q) > 0:
+            # sort by f-score instead of distance
+            self.q.sort(key=self.__get_f_score)
+            u = self.q.pop()
+
+            # periodically update progress (every 0.5 s)
+            now = time.time()
+            if now - last_print_time > 0.5:
+                elapsed = now - start_time
+                print(f"\rPlanning path... {elapsed:.2f} s", end="", flush=True)
+                last_print_time = now
+
+            if u.name == en.name:
+                break
+
+            for i in range(len(u.children)):
+                c = u.children[i]
+                w = u.weight[i]
                 new_dist = self.dist[u.name] + w
                 if new_dist < self.dist[c.name]:
                     self.dist[c.name] = new_dist
                     self.via[c.name] = u.name
 
+        elapsed = time.time() - start_time
+        print(f"\rPath planning complete! Total time: {elapsed:.2f} s")
+
+
+    def reconstruct_path(self, start_key, goal_key):
+        path = []
+        u = goal_key
+        while u != start_key:
+            path.append(u)
+            u = self.via.get(u)
+            if u is None:
+                raise KeyError("Goal not reachable from start")
+        path.append(start_key)
+        path.reverse()
+        print("\nPath in map coordinates:")
+        print(path)
+        return path, len(path)
+    """
     def reconstruct_path(self,sn,en):
         #path = []
         #dist = 0
@@ -300,6 +355,7 @@ class AStar():
             path.append(u)
         path.reverse()
         return path,dist
+    """
 
 class MapProcessor():
     def __init__(self,name):
@@ -501,70 +557,68 @@ class Navigation(Node):
         self.ttbot_pose = data.pose
         self.get_logger().info(
             'ttbot_pose: {:.4f}, {:.4f}'.format(self.ttbot_pose.pose.position.x, self.ttbot_pose.pose.position.y))
-    """
-    def __ttbot_pose_cbk(self, data):
-        #! Callback to catch the position of the vehicle.
-        print(">>> __ttbot_pose_cbk triggered <<<")
-        # Convert AMCL pose to a PoseStamped
-        self.ttbot_pose = PoseStamped()
-        self.ttbot_pose.header = data.header
-        self.ttbot_pose.pose = data.pose.pose  # ✅ Full PoseStamped
 
+    def a_star_path_planner(self, start_pose, end_pose):
+        """A* path planner: converts world <-> map and runs A* search."""
+        path = Path()
         self.get_logger().info(
-            'ttbot_pose: {:.4f}, {:.4f}'.format(
-                self.ttbot_pose.pose.position.x, self.ttbot_pose.pose.position.y
-            )
+            f"A* planner.\n> start: {start_pose.pose.position},\n> end: {end_pose.pose.position}"
         )
-    """
-    """
-    def a_star_path_planner(self, start_pose, end_pose):
-        #! A Start path planner.
-        #@param  start_pose    PoseStamped object containing the start of the path to be created.
-        #@param  end_pose      PoseStamped object containing the end of the path to be created.
-        #@return path          Path object containing the sequence of waypoints of the created path.
-        
-        path = Path()
-        self.get_logger().info(
-            'A* planner.\n> start: {},\n> end: {}'.format(start_pose.pose.position, end_pose.pose.position))
-        self.start_time = self.get_clock().now().nanoseconds*1e-9 #Do not edit this line (required for autograder)
-        # TODO: IMPLEMENTATION OF THE A* ALGORITHM
-        path.poses.append(start_pose)
-        path.poses.append(end_pose)
-        # Do not edit below (required for autograder)
-        self.astarTime = Float32()
-        self.astarTime.data = float(self.get_clock().now().nanoseconds*1e-9-self.start_time)
-        self.calc_time_pub.publish(self.astarTime)
-        
-        return path
-    """
-    def a_star_path_planner(self, start_pose, end_pose):
-        """! A* path planner (autograder-safe)"""
-        path = Path()
-        self.get_logger().info(
-            'A* planner.\n> start: {},\n> end: {}'.format(
-                start_pose.pose.position, end_pose.pose.position))
 
         self.start_time = self.get_clock().now().nanoseconds * 1e-9
 
-        # --- Convert world coordinates to map indices ---
-        # Map image size
-        im_h, im_w = self.mp.map.image_array.shape
-        # Map limits
-        xmin, xmax, ymin, ymax = self.mp.map.limits
-        # Resolution
-        res_x = (xmax - xmin) / im_w
-        res_y = (ymax - ymin) / im_h
+        # --- Convert world → map ---
+        start_i, start_j = self.world_to_map(start_pose)
+        goal_i, goal_j = self.world_to_map(end_pose)
 
-        def world_to_map(p):
-            j = int((p.x - xmin) / res_x)
-            i = int((p.y - ymin) / res_y)
-            # Clip to bounds
-            i = np.clip(i, 0, im_h - 1)
-            j = np.clip(j, 0, im_w - 1)
-            return i, j
+        self.get_logger().info(f"Start node (map): {start_i},{start_j}, Goal node (map): {goal_i},{goal_j}")
+
+        # Ensure nodes exist in graph
+        start_i, start_j = self.nearest_free_node(start_i, start_j)
+        goal_i, goal_j = self.nearest_free_node(goal_i, goal_j)
+
+        start_key = f"{start_i},{start_j}"
+        goal_key = f"{goal_i},{goal_j}"
+
+        self.get_logger().info(f"Start node (map): {start_key}, Goal node (map): {goal_key}")
+
+        if start_key not in self.mp.map_graph.g or goal_key not in self.mp.map_graph.g:
+            self.get_logger().warn(f"Start or goal not in graph! ({start_key}, {goal_key})")
+            return path
+
+        # --- Run A* ---
+        astar_solver = AStar(self.mp.map_graph)
+        astar_solver.solve(self.mp.map_graph.g[start_key], self.mp.map_graph.g[goal_key])
+
+        try:
+            node_path, _ = astar_solver.reconstruct_path(start_key, goal_key)
+        except KeyError:
+            self.get_logger().warn(f"Goal {goal_key} not reachable from start {start_key}")
+            return path
         
-        def nearest_free_node(i, j):
-            """Return the nearest (i,j) that exists in the graph"""
+        # --- Convert back map → world ---
+        for node_name in node_path:
+            i, j = map(int, node_name.split(","))
+            pose = self.map_to_world(i, j)
+            path.poses.append(pose)
+
+        # After generating your path (e.g. nav_path)
+        print("\nPath in world coordinates:")
+        for i, pose_stamped in enumerate(path.poses):
+            pos = pose_stamped.pose.position
+            print(f"{i:>2}: (x={pos.x:.3f}, y={pos.y:.3f})")
+
+
+        # --- Autograder timing ---
+        self.astarTime = Float32()
+        self.astarTime.data = float(self.get_clock().now().nanoseconds * 1e-9 - self.start_time)
+        self.calc_time_pub.publish(self.astarTime)
+
+        return path
+    
+    def nearest_free_node(self, i, j):
+            print((f"{i},{j}"), " node in graph? ", (f"{i},{j}" in self.mp.map_graph.g))
+            #Return the nearest (i,j) that exists in the graph
             if f"{i},{j}" in self.mp.map_graph.g:
                 return i, j
             # Simple BFS search in 8-connected neighbors
@@ -584,43 +638,35 @@ class Navigation(Node):
                             if (ni,nj) not in visited:
                                 queue.append((ni,nj))
             raise ValueError("No free nodes found nearby")
+    
+    def world_to_map(self, pose):
+        x, y = pose.pose.position.x, pose.pose.position.y
+        res = self.mp.map.map_df.resolution[0]
+        res = 0.075
+        print("Resolution:", res)
 
-        start_i, start_j = nearest_free_node(*world_to_map(start_pose.pose.position))
-        goal_i, goal_j = nearest_free_node(*world_to_map(end_pose.pose.position))
-        print(f"Start node: {start_i},{start_j}, Goal node: {goal_i},{goal_j}")
+        # Extract origin correctly
+        origin_list = self.mp.map.map_df.origin.iloc[0]  # first element is the list [-0.29, -0.768, 0]
+        ox, oy = origin_list[0], origin_list[1]
 
-        start_name = f"{start_i},{start_j}"
-        goal_name = f"{goal_i},{goal_j}"
+        i = int((y - oy) / res)
+        j = int((x - ox) / res)
+        return i, j
 
-        # --- Run A* ---
-        astar_solver = AStar(self.mp.map_graph)
-        start_node = self.mp.map_graph.g[start_name]
-        goal_node = self.mp.map_graph.g[goal_name]
-        astar_solver.solve(start_node, goal_node)
-        node_path, _ = astar_solver.reconstruct_path(start_node, goal_node)
+    def map_to_world(self, i, j):
+        res = self.mp.map.map_df.resolution[0]
+        res = 0.075
 
-        print("A* node path:", node_path)
-        print("Map limits:", self.mp.map.limits)
-        print("Resolution:", (res_x, res_y))
+        origin_list = self.mp.map.map_df.origin.iloc[0]
+        ox, oy = origin_list[0], origin_list[1]
 
+        x = j * res + ox
+        y = i * res + oy
+        pose = PoseStamped()
+        pose.pose.position.x = x
+        pose.pose.position.y = y
+        return pose
 
-        # --- Convert path nodes back to world coordinates ---
-        for node_name in node_path:
-            i, j = map(int, node_name.split(','))
-            x = xmin + j * res_x
-            y = ymin + i * res_y
-            pose = PoseStamped()
-            pose.pose.position.x = x
-            pose.pose.position.y = y
-            pose.pose.position.z = 0.0
-            path.poses.append(pose)
-
-        # --- Autograder timing (do not edit) ---
-        self.astarTime = Float32()
-        self.astarTime.data = float(self.get_clock().now().nanoseconds*1e-9 - self.start_time)
-        self.calc_time_pub.publish(self.astarTime)
-
-        return path
    
     """
     def get_path_idx(self, path, vehicle_pose):
@@ -690,7 +736,7 @@ class Navigation(Node):
 
         # Control law (tune gains)
         k_lin = 0.3
-        k_ang = 1.2
+        k_ang = 0.8
         speed = k_lin * distance
         heading = k_ang * yaw_error
 
