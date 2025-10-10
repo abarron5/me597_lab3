@@ -1,3 +1,5 @@
 [console_scripts]
-auto_navigator.py = task_4.auto_navigator.py:main
+auto_navigator = task_4.auto_navigator:main
+map_test = task_4.map_test:main
+test_astar = task_4.test_astar:main
 
