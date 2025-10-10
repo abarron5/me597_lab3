@@ -750,7 +750,7 @@ class Navigation(Node):
 
         while rclpy.ok():
             # Process callbacks
-            rclpy.spin_once(self, timeout_sec=0.1)
+            rclpy.spin_once(self, timeout_sec=1.0)
 
             # Wait for AMCL and goal
             if self.goal_pose is None:
@@ -782,8 +782,6 @@ class Navigation(Node):
 
             self.rate.sleep()
 
-
-    
 
 def main(args=None):
     rclpy.init(args=args)
