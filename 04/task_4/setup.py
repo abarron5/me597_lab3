@@ -31,7 +31,7 @@ setup(
         'console_scripts': [
             'auto_navigator = task_4.auto_navigator:main', #.py?
             'map_test = task_4.map_test:main',
-            'test_astar = task_4.test_astar:main',
+            'test = task_4.test:main',
         ],
     },
 )

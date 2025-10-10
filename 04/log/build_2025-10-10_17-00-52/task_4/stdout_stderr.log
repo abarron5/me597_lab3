@@ -21,5 +21,5 @@ Copying ../build/task_4/task_4.egg-info to /home/me597/ME597/me597_lab3/04/insta
 running install_scripts
 Installing auto_navigator script to /home/me597/ME597/me597_lab3/04/install/task_4/lib/task_4
 Installing map_test script to /home/me597/ME597/me597_lab3/04/install/task_4/lib/task_4
-Installing test_astar script to /home/me597/ME597/me597_lab3/04/install/task_4/lib/task_4
+Installing test script to /home/me597/ME597/me597_lab3/04/install/task_4/lib/task_4
 writing list of installed files to '/home/me597/ME597/me597_lab3/04/build/task_4/install.log'
