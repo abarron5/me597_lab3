@@ -6,34 +6,24 @@ import numpy as np
 
 import rclpy
 from rclpy.node import Node
-from nav_msgs.msg import Path, Odometry
-from geometry_msgs.msg import PoseStamped, Point, PoseWithCovarianceStamped, Pose, Twist
+from nav_msgs.msg import Path
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from std_msgs.msg import Float32
-from geometry_msgs.msg import PoseStamped, Quaternion
-import numpy as np
 
 from PIL import Image, ImageOps
-import matplotlib.pyplot as plt
-
-import numpy as np
 
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 
 import yaml
 import pandas as pd
 
-from copy import copy, deepcopy
+from copy import copy
 import time
 from graphviz import Graph
-from threading import Thread
-#from tf_transformations import euler_from_quaternion
+
 import math
 
-
-
 from ament_index_python.packages import get_package_share_directory
-
 
 
 class Map():
@@ -43,36 +33,7 @@ class Map():
 
         self.resolution = self.map_df.resolution[0]  # meters per pixel
         self.origin = self.map_df.origin[0]          # [x, y, theta]
-    """
-    def __repr__(self):
-        fig, ax = plt.subplots(dpi=150)
-        ax.imshow(self.image_array,extent=self.limits, cmap=cm.gray)
-        ax.plot()
-        return ""
-    """
-
-    """
-    def __open_map(self,map_name):
-        # Open the YAML file which contains the map name and other
-        # configuration parameters
-        f = open(map_name + '.yaml', 'r')
-        map_df = pd.json_normalize(yaml.safe_load(f))
-        # Open the map image
-        map_name = map_df.image[0]
-        im = Image.open(map_name)
-        size = 200, 200
-        im.thumbnail(size)
-        im = ImageOps.grayscale(im)
-        # Get the limits of the map. This will help to display the map
-        # with the correct axis ticks.
-        xmin = map_df.origin[0][0]
-        xmax = map_df.origin[0][0] + im.size[0] * map_df.resolution[0]
-        ymin = map_df.origin[0][1]
-        ymax = map_df.origin[0][1] + im.size[1] * map_df.resolution[0]
-
-        return im, map_df, [xmin,xmax,ymin,ymax]
-    """
-        
+       
     def __open_map(self, map_name):
         # Handle full path vs relative
         if not os.path.isabs(map_name):
@@ -118,6 +79,7 @@ class Map():
                 else:
                     img_array[i,j] = 0
         return img_array
+
 
 class Queue():
     def __init__(self, init_queue = []):
@@ -166,6 +128,7 @@ class Queue():
         self.end = len(self.queue)-1
         return p
 
+
 class GraphNode():
     def __init__(self,name):
         self.name = name
@@ -180,6 +143,7 @@ class GraphNode():
             w = [1]*len(node)
         self.children.extend(node)
         self.weight.extend(w)
+
 
 class Tree():
     def __init__(self,name):
@@ -224,6 +188,7 @@ class Tree():
         self.root = False
         self.end = True
 
+
 class AStar():
     def __init__(self, in_tree):
         self.in_tree = in_tree
@@ -244,6 +209,44 @@ class AStar():
         return self.dist[node.name] + self.h[node.name]
 
     def solve(self, sn, en):
+        self.dist[sn.name] = 0
+        start_time = time.time()
+        last_print_time = start_time
+        processed_nodes = 0
+        total_nodes = len(self.dist)  # total number of nodes in the graph
+
+        print("Planning path...", end="", flush=True)
+
+        while len(self.q) > 0:
+            # sort by f-score instead of distance
+            self.q.sort(key=self.__get_f_score)
+            u = self.q.pop()
+            processed_nodes += 1
+
+            # periodically update progress (every 0.5 s)
+            now = time.time()
+            if now - last_print_time > 0.5:
+                percent = 100 * processed_nodes / total_nodes
+                elapsed = now - start_time
+                print(f"\rPlanning path... {percent:.1f}% ({elapsed:.2f} s)", end="", flush=True)
+                last_print_time = now
+
+            if u.name == en.name:
+                break
+
+            for i in range(len(u.children)):
+                c = u.children[i]
+                w = u.weight[i]
+                new_dist = self.dist[u.name] + w
+                if new_dist < self.dist[c.name]:
+                    self.dist[c.name] = new_dist
+                    self.via[c.name] = u.name
+
+        elapsed = time.time() - start_time
+        print(f"\rPath planning complete! Total time: {elapsed:.2f} s       ")
+
+
+    def solve_1(self, sn, en):
         self.dist[sn.name] = 0
         start_time = time.time()
         last_print_time = start_time
@@ -275,7 +278,6 @@ class AStar():
         elapsed = time.time() - start_time
         print(f"\rPath planning complete! Total time: {elapsed:.2f} s")
 
-
     def reconstruct_path(self, start_key, goal_key):
         path = []
         u = goal_key
@@ -286,26 +288,10 @@ class AStar():
                 raise KeyError("Goal not reachable from start")
         path.append(start_key)
         path.reverse()
-        print("\nPath in map coordinates:")
-        print(path)
+        #print("\nPath in map coordinates:")
+        #print(path)
         return path, len(path)
-    """
-    def reconstruct_path(self,sn,en):
-        #path = []
-        #dist = 0
-        # Place code here
-        #return path,dist
-        start_key = sn.name
-        end_key = en.name
-        dist = self.dist[end_key]
-        u = end_key
-        path = [u]
-        while u != start_key:
-            u = self.via[u]
-            path.append(u)
-        path.reverse()
-        return path,dist
-    """
+
 
 class MapProcessor():
     def __init__(self,name):
@@ -411,6 +397,15 @@ class MapProcessor():
         m = np.ones(shape=(size,size))
         return m
     
+    def circular_kernel(self, radius):
+        """
+        Create a circular kernel of given radius in pixels.
+        Returns a 2D numpy array of 1s inside the circle, 0s outside.
+        """
+        y, x = np.ogrid[-radius:radius+1, -radius:radius+1]
+        mask = x**2 + y**2 <= radius**2
+        return mask.astype(np.uint8)
+    
     def draw_path(self,path):
         path_tuple_list = []
         path_array = copy(self.inf_map_img_array)
@@ -485,9 +480,7 @@ class MapProcessor():
         plt.axis("equal")
         plt.show(block=False)
         plt.pause(0.001)
-
-
-
+    
 
 class Navigation(Node):
     """! Navigation node class.
@@ -511,8 +504,6 @@ class Navigation(Node):
         # If not provided, use local default
         if not map_file:
             # Change this path to your actual map YAML path
-            #default_map_path = os.path.join(os.path.dirname(__file__), 'maps', 'sync_classroom_map.yaml')
-            #map_file = default_map_path
             pkg_share = get_package_share_directory('task_4')
             map_file = os.path.join(pkg_share, 'maps', 'sync_classroom_map.yaml')
 
@@ -526,7 +517,14 @@ class Navigation(Node):
 
         # Initialize map processor
         self.mp = MapProcessor(map_file)
-        kernel = self.mp.rect_kernel(5, 1)
+        kernel = self.mp.rect_kernel(8, 8)
+        #robot_radius_m = 0.15      # meters
+        #res = self.mp.map.map_df.resolution[0]  # map resolution in meters/pixel
+        #radius_px = int(robot_radius_m / res)
+        #kernel = self.mp.circular_kernel(radius_px)
+        #self.mp.inflate_map(kernel, absolute=True)
+
+
         self.mp.inflate_map(kernel, True)
         self.mp.get_graph_from_map()
 
@@ -574,16 +572,13 @@ class Navigation(Node):
             'goal_pose: {:.4f}, {:.4f}'.format(self.goal_pose.pose.position.x, self.goal_pose.pose.position.y))
     
     def __ttbot_pose_cbk(self, data):
-        print(">>> __ttbot_pose_cbk triggered <<<")
+        #print(">>> __ttbot_pose_cbk triggered <<<")
         self.ttbot_pose_received = True
         self.ttbot_pose = PoseStamped()
         self.ttbot_pose.header = data.header
         self.ttbot_pose.pose = data.pose.pose
-        self.get_logger().info(
-            'ttbot_pose: {:.4f}, {:.4f}'.format(
-                self.ttbot_pose.pose.position.x, self.ttbot_pose.pose.position.y
-            )
-        )
+        #self.get_logger().info('ttbot_pose: {:.4f}, {:.4f}'.format(
+        #        self.ttbot_pose.pose.position.x, self.ttbot_pose.pose.position.y))
 
     def a_star_path_planner(self, start_pose, end_pose):
         # A* path planner: converts world <-> map and runs A* search.
@@ -674,7 +669,7 @@ class Navigation(Node):
         # Extract origin correctly
         origin_list = self.mp.map.map_df.origin.iloc[0]  # first element is the list [-0.29, -0.768, 0]
         ox, oy = origin_list[0], origin_list[1]
-        print("test: ", x, y)
+        #print("test: ", x, y)
         #fix
         i = self.mp.map.size[1] - int((y - oy) / resy)
         #j = self.mp.map.size[0] - int((x - ox) / resx)
@@ -683,29 +678,6 @@ class Navigation(Node):
         #i = i - int(1/resx) + 1
         #j = self.mp.map.size[0] - int(1/0.05) - j - 1
         return i, j
-    
-    """
-    def world_to_map(self, *args):
-        res = 0.075
-        origin_list = self.mp.map.map_df.origin.iloc[0]
-        ox, oy = origin_list[0], origin_list[1]
-
-        # Handle both call styles
-        if len(args) == 1:
-            pose = args[0]
-            if hasattr(pose, 'pose'):
-                x, y = pose.pose.position.x, pose.pose.position.y
-            else:
-                x, y = pose.position.x, pose.position.y
-        elif len(args) == 2:
-            x, y = args
-        else:
-            raise TypeError("world_to_map() must be called with (pose) or (x, y)")
-
-        i = int((y - oy) / res)
-        j = int((x - ox) / res)
-        return j, i  # (x→column, y→row)
-    """
 
     def map_to_world(self, i, j):
         res = self.mp.map.map_df.resolution[0]
@@ -721,19 +693,8 @@ class Navigation(Node):
         pose.pose.position.x = x
         pose.pose.position.y = y
         return pose
-
-
-    def get_path_idx_default(self, path, vehicle_pose):
-        """! Path follower.
-        @param  path                  Path object containing the sequence of waypoints of the created path.
-        @param  current_goal_pose     PoseStamped object containing the current vehicle position.
-        @return idx                   Position in the path pointing to the next goal pose to follow.
-        """
-        idx = 0
-        # TODO: IMPLEMENT A MECHANISM TO DECIDE WHICH POINT IN THE PATH TO FOLLOW idx <= len(path)
-        return idx
     
-    def get_path_idx(self, path, vehicle_pose, last_idx=0):
+    def get_path_idx_1(self, path, vehicle_pose, last_idx=0):
         """Return the index of the next waypoint to follow, never going backward."""
         if not path.poses:
             return 0
@@ -751,19 +712,20 @@ class Navigation(Node):
                 return i
 
         return len(path.poses) - 1
-
-    def path_follower_default(self, vehicle_pose, current_goal_pose):
-        """! Path follower.
-        @param  vehicle_pose           PoseStamped object containing the current vehicle pose.
-        @param  current_goal_pose      PoseStamped object containing the current target from the created path. This is different from the global target.
-        @return path                   Path object containing the sequence of waypoints of the created path.
-        """
-        speed = 0.0
-        heading = 0.0
-        # TODO: IMPLEMENT PATH FOLLOWER
-        return speed, heading
     
-    def path_follower(self, vehicle_pose, current_goal_pose):
+    def get_path_idx(self, path, vehicle_pose, last_idx=0):
+        vx = vehicle_pose.pose.position.x
+        vy = vehicle_pose.pose.position.y
+        lookahead = 0.3
+        for i in range(last_idx, len(path.poses)):
+            px = path.poses[i].pose.position.x
+            py = path.poses[i].pose.position.y
+            dist = math.hypot(px - vx, py - vy)
+            if dist > lookahead:
+                return i
+        return len(path.poses) - 1
+
+    def path_follower_1(self, vehicle_pose, current_goal_pose):
         """Compute speed and heading to reach the current goal waypoint."""
         # Current position
         vx = vehicle_pose.pose.position.x
@@ -790,6 +752,53 @@ class Navigation(Node):
         heading = 2.0 * heading_error  # proportional gain Kp=2.0
 
         return speed, heading
+    
+    def quat_to_yaw(self, q):
+        """Convert quaternion to yaw (safe for ROS standard axes)."""
+        self.siny_cosp = 2 * (q.w * q.z + q.x * q.y)
+        self.cosy_cosp = 1 - 2 * (q.y**2 + q.z**2)
+        return math.atan2(self.siny_cosp, self.cosy_cosp)
+
+    def path_follower(self, vehicle_pose, current_goal_pose):
+        vx = vehicle_pose.pose.position.x
+        vy = vehicle_pose.pose.position.y
+        gx = current_goal_pose.pose.position.x
+        gy = current_goal_pose.pose.position.y
+
+        #goal_dist = math.hypot(gx - vx, gy - vy)
+
+        # desired yaw
+        #desired_yaw = math.atan2(gy - vy, gx - vx)
+
+        # current yaw from quaternion
+        #q = vehicle_pose.pose.orientation
+        #yaw = math.atan2(2*(q.w*q.z + q.x*q.y), 1 - 2*(q.y**2 + q.z**2))
+
+        # heading error (normalize)
+        #heading_error = (desired_yaw - yaw + math.pi) % (2 * math.pi) - math.pi
+
+        yaw = self.quat_to_yaw(vehicle_pose.pose.orientation)
+
+        desired_yaw = math.atan2(gy - vy, gx - vx)
+
+        # Compute heading error safely
+        heading_error = (desired_yaw - yaw + math.pi) % (2 * math.pi) - math.pi
+
+        # distance to goal
+        dist = math.hypot(gx - vx, gy - vy)
+
+        # PID-like control
+        Kp_ang = 1.0   # proportional gain
+        Kd_ang = 0.2   # derivative gain (optional, helps damping)
+        Kp_lin = 0.5   # slow down when turning
+
+        # heading control
+        heading = Kp_ang * heading_error
+
+        # reduce speed when heading error is large
+        speed = max(0.05, min(0.2, Kp_lin * dist * math.cos(heading_error)))
+
+        return speed, heading
 
     def move_ttbot(self, speed, heading):
         """! Function to move turtlebot passing directly a heading angle and the speed.
@@ -805,39 +814,19 @@ class Navigation(Node):
         self.cmd_vel_pub.publish(cmd_vel)
 
     def move_ttbot_safe(self, speed, heading):
+
         """Move the TurtleBot using linear speed and angular velocity."""
         cmd_vel = Twist()
         # Limit speed to reasonable ranges
         cmd_vel.linear.x = max(min(speed, 0.2), 0.0)  # max 0.2 m/s
         cmd_vel.angular.z = max(min(heading, 1.0), -1.0)  # max ±1 rad/s
         self.cmd_vel_pub.publish(cmd_vel)
-
-    """def show_map_and_path(self, path):
-        #Display the map and planned path using matplotlib before navigation.
-        import matplotlib.pyplot as plt
-
-        # Get the map array with path drawn
-        #path_image = self.mp.draw_path(path, self.world_to_map)
-        path_image = self.mp.draw_path(path, lambda x, y: self.world_to_map(
-            PoseStamped(pose=Pose(position=Point(x=x, y=y)))
-            ))
-
-
-        plt.figure("Map and Planned Path", dpi=150)
-        plt.imshow(path_image, cmap='gray', origin='lower')
-
-        # Optional: draw start and goal
-        if path and len(path.poses) > 1:
-            start = tuple(map(int, path[0].split(',')))
-            goal = tuple(map(int, path[-1].split(',')))
-            plt.plot(start[1], start[0], 'go', label='Start')
-            plt.plot(goal[1], goal[0], 'ro', label='Goal')
-
-        plt.title("Map and Planned Path")
-        plt.legend()
-        plt.show(block=False)
-        plt.pause(3)  # display for a few seconds before continuing
-        plt.close()"""
+    
+    def stop_robot(self):
+        cmd_vel = Twist()
+        cmd_vel.linear.x = 0.0
+        cmd_vel.angular.z = 0.0
+        self.cmd_vel_pub.publish(cmd_vel)
 
     def show_map_and_path(self, path):
         if path and len(path.poses) > 1:
@@ -853,28 +842,16 @@ class Navigation(Node):
             #    PoseStamped(pose=Pose(position=Point(x=y, y=x)))
             #    ))
             path_image = self.mp.draw_path_wrld(path, self.world_to_map)
-            print("Show size: ", self.mp.map.size)
+            #print("Show size: ", self.mp.map.size)
             map_size = self.mp.map.size
             self.mp.display_map_with_path(path_image, map_size, start, goal)
 
-
-    
     def run(self):
         """Main loop using get_path_idx() to follow waypoints intelligently."""
         self.get_logger().info("Navigation node started, waiting for AMCL and goal updates...")
         
-        plt.ion()  # Enable interactive mode so it doesn't block
-        #plt.figure()
-        #plt.imshow(self.mp.inf_map_img_array)
-        #plt.colorbar()
-        #plt.show(block=False)
-        #plt.pause(0.001)
-
         self.new_goal_received = False  # Flag for new goal
         self.ttbot_pose_received = False  # Flag for first AMCL pose
-
-        #self.mp.repr()
-        #plt.pause(0.001)
 
         while rclpy.ok():
             # 1️⃣ Process callbacks
@@ -888,26 +865,10 @@ class Navigation(Node):
             path, map_path = self.a_star_path_planner(self.ttbot_pose, self.goal_pose)
             path_arr = self.mp.draw_path(map_path)
 
-            #plt.figure()
-            #fig, ax = plt.subplots()
-            #ax.imshow(self.mp.inf_map_img_array)            
-            #ax.imshow(path_arr)
-            
-            #ax.title("Map with Planned Path")
-            #ax.legend()
-            #ax.axis("equal")
-            #plt.show(block=False)
-            #plt.pause(0.001)
-
             self.get_logger().info(f"Planned path with {len(path.poses)} waypoints")
             
             # 🔹 Show map + path before starting motion
             self.show_map_and_path(path)
-            #path_image = self.mp.draw_path_wrld(path, lambda x, y: self.world_to_map(
-            #    PoseStamped(pose=Pose(position=Point(x=y, y=x)))
-            #    ))
-            #self.mp.display_map_with_path(path_image, start, goal)
-
             self.new_goal_received = False  # Reset goal flag
 
             # 4️⃣ Follow path using get_path_idx
@@ -919,8 +880,9 @@ class Navigation(Node):
                 idx = self.get_path_idx(path, self.ttbot_pose, last_idx)
                 current_goal = path.poses[idx]
 
-                print("Pose:", idx, "/", len(path.poses), 
-                    "Current Goal: (", current_goal.pose.position.x, ",", current_goal.pose.position.y, ")")
+                if idx != last_idx:
+                    print("Pose:", idx, "/", len(path.poses), 
+                        "Current Goal: (", current_goal.pose.position.x, ",", current_goal.pose.position.y, ")")
 
                 speed, heading = self.path_follower(self.ttbot_pose, current_goal)
                 self.move_ttbot(speed, heading)
@@ -929,6 +891,7 @@ class Navigation(Node):
 
                 if idx >= len(path.poses) - 1:
                     self.get_logger().info("Reached goal!")
+                    self.stop_robot()
                     break
 
                 if self.new_goal_received:
