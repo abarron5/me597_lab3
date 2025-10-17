@@ -2,23 +2,23 @@ rosbag2_bagfile_information:
   version: 5
   storage_identifier: sqlite3
   duration:
-    nanoseconds: 93546457216
+    nanoseconds: 438503309404
   starting_time:
-    nanoseconds_since_epoch: 1760072134484331927
-  message_count: 414
+    nanoseconds_since_epoch: 1760590402929696718
+  message_count: 4002
   topics_with_message_count:
     - topic_metadata:
         name: /cmd_vel
         type: geometry_msgs/msg/Twist
         serialization_format: cdr
         offered_qos_profiles: "- history: 3\n  depth: 0\n  reliability: 1\n  durability: 2\n  deadline:\n    sec: 9223372036\n    nsec: 854775807\n  lifespan:\n    sec: 9223372036\n    nsec: 854775807\n  liveliness: 1\n  liveliness_lease_duration:\n    sec: 9223372036\n    nsec: 854775807\n  avoid_ros_namespace_conventions: false"
-      message_count: 11
+      message_count: 1872
     - topic_metadata:
         name: /scan
         type: sensor_msgs/msg/LaserScan
         serialization_format: cdr
         offered_qos_profiles: "- history: 3\n  depth: 0\n  reliability: 1\n  durability: 2\n  deadline:\n    sec: 9223372036\n    nsec: 854775807\n  lifespan:\n    sec: 9223372036\n    nsec: 854775807\n  liveliness: 1\n  liveliness_lease_duration:\n    sec: 9223372036\n    nsec: 854775807\n  avoid_ros_namespace_conventions: false"
-      message_count: 403
+      message_count: 2130
   compression_format: ""
   compression_mode: ""
   relative_file_paths:
@@ -26,7 +26,7 @@ rosbag2_bagfile_information:
   files:
     - path: task_4_0.db3
       starting_time:
-        nanoseconds_since_epoch: 1760072134484331927
+        nanoseconds_since_epoch: 1760590402929696718
       duration:
-        nanoseconds: 93546457216
-      message_count: 414
+        nanoseconds: 438503309404
+      message_count: 4002

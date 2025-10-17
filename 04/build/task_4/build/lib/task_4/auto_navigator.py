@@ -214,7 +214,7 @@ class AStar():
         last_print_time = start_time
         processed_nodes = 0
         total_nodes = len(self.dist)  # total number of nodes in the graph
-
+        print("original")
         print("Planning path...", end="", flush=True)
 
         while len(self.q) > 0:
@@ -517,7 +517,7 @@ class Navigation(Node):
 
         # Initialize map processor
         self.mp = MapProcessor(map_file)
-        kernel = self.mp.rect_kernel(8, 8)
+        kernel = self.mp.rect_kernel(9, 9)
         #robot_radius_m = 0.15      # meters
         #res = self.mp.map.map_df.resolution[0]  # map resolution in meters/pixel
         #radius_px = int(robot_radius_m / res)
@@ -535,12 +535,14 @@ class Navigation(Node):
 
         # Initialize state variables
         self.new_goal_received = False
+        self.reached_goal = False
         self.current_pose = None
         self.goal_pose = None
         self.path = None
         self.ttbot_pose_x = 0.0
         self.ttbot_pose_y = 0.0
         self.ttbot_yaw = 0.0
+        self.threshold = 0.2
 
         # Path planner/follower related variables
         self.path = Path()
@@ -694,25 +696,7 @@ class Navigation(Node):
         pose.pose.position.y = y
         return pose
     
-    def get_path_idx_1(self, path, vehicle_pose, last_idx=0):
-        """Return the index of the next waypoint to follow, never going backward."""
-        if not path.poses:
-            return 0
-
-        threshold = 0.1  # meters
-        vx = vehicle_pose.pose.position.x
-        vy = vehicle_pose.pose.position.y
-
-        # Start checking from last_idx to avoid going backward
-        for i in range(last_idx, len(path.poses)):
-            px = path.poses[i].pose.position.x
-            py = path.poses[i].pose.position.y
-            dist = ((px - vx) ** 2 + (py - vy) ** 2) ** 0.5
-            if dist > threshold:
-                return i
-
-        return len(path.poses) - 1
-    
+  
     def get_path_idx(self, path, vehicle_pose, last_idx=0):
         vx = vehicle_pose.pose.position.x
         vy = vehicle_pose.pose.position.y
@@ -798,7 +782,7 @@ class Navigation(Node):
         # reduce speed when heading error is large
         speed = max(0.05, min(0.2, Kp_lin * dist * math.cos(heading_error)))
 
-        return speed, heading
+        return speed, heading, dist
 
     def move_ttbot(self, speed, heading):
         """! Function to move turtlebot passing directly a heading angle and the speed.
@@ -852,6 +836,7 @@ class Navigation(Node):
         
         self.new_goal_received = False  # Flag for new goal
         self.ttbot_pose_received = False  # Flag for first AMCL pose
+        self.reached_goal = False
 
         while rclpy.ok():
             # 1️⃣ Process callbacks
@@ -884,12 +869,12 @@ class Navigation(Node):
                     print("Pose:", idx, "/", len(path.poses), 
                         "Current Goal: (", current_goal.pose.position.x, ",", current_goal.pose.position.y, ")")
 
-                speed, heading = self.path_follower(self.ttbot_pose, current_goal)
+                speed, heading, dist = self.path_follower(self.ttbot_pose, current_goal)
                 self.move_ttbot(speed, heading)
 
                 last_idx = idx  # update
 
-                if idx >= len(path.poses) - 1:
+                if idx >= len(path.poses) - 1 and dist < self.threshold:
                     self.get_logger().info("Reached goal!")
                     self.stop_robot()
                     break

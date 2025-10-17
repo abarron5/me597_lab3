@@ -10,6 +10,21 @@
   <exec_depend>rclpy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>ros2launch</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <!-- For launching the TurtleBot4 navigation stack -->
+  <exec_depend>turtlebot4_navigation</exec_depend>
+
+  <!-- For RViz visualization -->
+  <exec_depend>rviz2</exec_depend>
+
+  <!-- For ROS messages -->
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

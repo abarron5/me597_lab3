@@ -11,6 +11,8 @@ setup.py
 ../build/task_4/task_4.egg-info/zip-safe
 launch/gen_auto_nav_launch.py
 launch/gen_sync_map_launch.py
+launch/turtlebot4_navigator.launch.py
+launch/view_robot.launch.py
 maps/classroom.rviz
 maps/classroom_map.pgm
 maps/classroom_map.rviz
@@ -19,8 +21,10 @@ maps/sync_classroom_map.pgm
 maps/sync_classroom_map.rviz
 maps/sync_classroom_map.yaml
 resource/task_4
+rviz/robot.rviz
 task_4/__init__.py
 task_4/auto_navigator.py
+task_4/auto_navigator_fast.py
 task_4/test.py
 test/test_copyright.py
 test/test_flake8.py
